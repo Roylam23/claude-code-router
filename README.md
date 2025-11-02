@@ -25,6 +25,7 @@
 - **Request/Response Transformation**: Customize requests and responses for different providers using transformers.
 - **Dynamic Model Switching**: Switch models on-the-fly within Claude Code using the `/model` command.
 - **CLI Model Management**: Manage models and providers directly from the terminal with `ccr model`.
+- **Preset Commands**: Create custom command aliases with predefined configurations for different use cases.
 - **GitHub Actions Integration**: Trigger Claude Code tasks in your GitHub workflows.
 - **Plugin System**: Extend functionality with custom transformers.
 
@@ -63,6 +64,7 @@ The `config.json` file has several key sections:
 - **`Providers`**: Used to configure different model providers.
 - **`Router`**: Used to set up routing rules. `default` specifies the default model, which will be used for all requests if no other route is configured.
 - **`API_TIMEOUT_MS`**: Specifies the timeout for API calls in milliseconds.
+- **`Preset`** (optional): Used to define preset commands with predefined configurations. Allowing you to quickly switch between different model configurations using custom command aliases.
 
 #### Environment Variable Interpolation
 
@@ -200,6 +202,22 @@ Here is a comprehensive example:
     "longContext": "openrouter,google/gemini-2.5-pro-preview",
     "longContextThreshold": 60000,
     "webSearch": "gemini,gemini-2.5-flash"
+  },
+  "Preset": {
+    "deepseek": {
+      "default": "deepseek,deepseek-chat",
+      "background": "ollama,qwen2.5-coder:latest",
+      "think": "deepseek,deepseek-reasoner",
+      "longContext": "openrouter,google/gemini-2.5-pro-preview",
+      "longContextThreshold": 60000,
+      "webSearch": "gemini,gemini-2.5-flash"
+    },
+    "qwen": {
+      "default": "dashscope,qwen3-coder-plus",
+      "background": "openrouter,anthropic/claude-3-5-haiku",
+      "think": "openrouter,anthropic/claude-3.7-sonnet:thinking",
+      "longContext": "openrouter,anthropic/claude-3-5-sonnet"
+    }
   }
 }
 ```
