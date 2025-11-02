@@ -112,6 +112,79 @@ const getUseModel = async (
   const projectSpecificRouter = await getProjectSpecificRouter(req);
   const Router = projectSpecificRouter || config.Router;
 
+  // Check if there's an active preset from environment variable
+  const activePresetName = process.env.CCR_ACTIVE_PRESET;
+  if (activePresetName && config.Preset && config.Preset[activePresetName]) {
+    req.log.info(`Using preset: ${activePresetName}`);
+    const presetConfig = config.Preset[activePresetName];
+
+    // Use preset configuration directly
+    if (req.body.model.includes(",")) {
+      const [provider, model] = req.body.model.split(",");
+      const finalProvider = config.Providers.find(
+        (p: any) => p.name.toLowerCase() === provider
+      );
+      const finalModel = finalProvider?.models?.find(
+        (m: any) => m.toLowerCase() === model
+      );
+      if (finalProvider && finalModel) {
+        return `${finalProvider.name},${finalModel}`;
+      }
+      return req.body.model;
+    }
+
+    // if tokenCount is greater than the configured threshold, use the long context model
+    const longContextThreshold = presetConfig.longContextThreshold || 60000;
+    const lastUsageThreshold =
+      lastUsage &&
+      lastUsage.input_tokens > longContextThreshold &&
+      tokenCount > 20000;
+    const tokenCountThreshold = tokenCount > longContextThreshold;
+    if ((lastUsageThreshold || tokenCountThreshold) && presetConfig.longContext) {
+      req.log.info(
+        `Using long context model due to token count: ${tokenCount}, threshold: ${longContextThreshold}`
+      );
+      return presetConfig.longContext;
+    }
+    if (
+      req.body?.system?.length > 1 &&
+      req.body?.system[1]?.text?.startsWith("<CCR-SUBAGENT-MODEL>")
+    ) {
+      const model = req.body?.system[1].text.match(
+        /<CCR-SUBAGENT-MODEL>(.*?)<\/CCR-SUBAGENT-MODEL>/s
+      );
+      if (model) {
+        req.body.system[1].text = req.body.system[1].text.replace(
+          `<CCR-SUBAGENT-MODEL>${model[1]}</CCR-SUBAGENT-MODEL>`,
+          ""
+        );
+        return model[1];
+      }
+    }
+    // Use the background model for any Claude Haiku variant
+    if (
+      req.body.model?.startsWith("claude-3-5-haiku") &&
+      presetConfig.background
+    ) {
+      req.log.info(`Using background model for ${req.body.model}`);
+      return presetConfig.background;
+    }
+    // The priority of websearch must be higher than thinking.
+    if (
+      Array.isArray(req.body.tools) &&
+      req.body.tools.some((tool: any) => tool.type?.startsWith("web_search")) &&
+      presetConfig.webSearch
+    ) {
+      return presetConfig.webSearch;
+    }
+    // if exits thinking, use the think model
+    if (req.body.thinking && presetConfig.think) {
+      req.log.info(`Using think model for ${req.body.thinking}`);
+      return presetConfig.think;
+    }
+    return presetConfig.default;
+  }
+
   if (req.body.model.includes(",")) {
     const [provider, model] = req.body.model.split(",");
     const finalProvider = config.Providers.find(

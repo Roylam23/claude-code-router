@@ -74,15 +74,12 @@ export async function executeCodeCommand(args: string[] = []) {
       }
     }
   }
-  const claudeProcess = spawn(
-    claudePath,
-    argsArr,
-    {
-      env: process.env,
-      stdio: stdioConfig,
-      shell: true,
-    }
-  );
+  const command = `${claudePath} ${argsArr.join(' ')}`;
+  const claudeProcess = spawn(command, {
+    shell: true,
+    env: process.env,
+    stdio: stdioConfig,
+  });
 
   // Close stdin for non-interactive mode
   if (config.NON_INTERACTIVE_MODE) {

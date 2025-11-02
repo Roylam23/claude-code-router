@@ -14,6 +14,7 @@ import { spawn, exec } from "child_process";
 import { PID_FILE, REFERENCE_COUNT_FILE } from "./constants";
 import fs, { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { readConfigFile } from "./utils";
 
 const command = process.argv[2];
 
@@ -61,6 +62,9 @@ async function waitForService(
 
 async function main() {
   const isRunning = await isServiceRunning()
+  const config = await readConfigFile();
+  const isPresetCommand = (config?.Preset && config.Preset[command]) ? command : null;
+
   switch (command) {
     case "start":
       run();
@@ -116,50 +120,76 @@ async function main() {
     case "model":
       await runModelSelector();
       break;
-    case "code":
-      if (!isRunning) {
-        console.log("Service not running, starting service...");
-        const cliPath = join(__dirname, "cli.js");
-        const startProcess = spawn("node", [cliPath, "start"], {
-          detached: true,
-          stdio: "ignore",
-        });
-
-        // let errorMessage = "";
-        // startProcess.stderr?.on("data", (data) => {
-        //   errorMessage += data.toString();
-        // });
-
-        startProcess.on("error", (error) => {
-          console.error("Failed to start service:", error.message);
-          process.exit(1);
-        });
-
-        // startProcess.on("close", (code) => {
-        //   if (code !== 0 && errorMessage) {
-        //     console.error("Failed to start service:", errorMessage.trim());
-        //     process.exit(1);
-        //   }
-        // });
-
-        startProcess.unref();
-
-        if (await waitForService()) {
-          // Join all code arguments into a single string to preserve spaces within quotes
-          const codeArgs = process.argv.slice(3);
-          executeCodeCommand(codeArgs);
-        } else {
-          console.error(
-            "Service startup timeout, please manually run `ccr start` to start the service"
-          );
-          process.exit(1);
+    case isPresetCommand:
+    case "code": {
+      // Always restart the service before executing code command
+      if (isRunning) {
+        // Stop the current service
+        try {
+          const pid = parseInt(readFileSync(PID_FILE, "utf-8"));
+          process.kill(pid);
+          cleanupPidFile();
+          if (existsSync(REFERENCE_COUNT_FILE)) {
+            try {
+              fs.unlinkSync(REFERENCE_COUNT_FILE);
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+          }
+        } catch (e) {
+          console.log("Failed to stop service, will attempt to start anyway.");
+          cleanupPidFile();
         }
-      } else {
+
+        // Wait a moment for the service to fully stop
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else if (isPresetCommand) {
+        console.log("Service not running, starting service...");
+      }
+
+      // Start the service with the appropriate configuration
+      const spawnEnv = isPresetCommand
+        ? { ...process.env, CCR_ACTIVE_PRESET: command }
+        : process.env;
+
+      const cliPath = join(__dirname, "cli.js");
+      const startProcess = spawn("node", [cliPath, "start"], {
+        detached: true,
+        stdio: "ignore",
+        env: spawnEnv
+      });
+
+      // let errorMessage = "";
+      // startProcess.stderr?.on("data", (data) => {
+      //   errorMessage += data.toString();
+      // });
+
+      startProcess.on("error", (error) => {
+        console.error("Failed to start service:", error.message);
+        process.exit(1);
+      });
+
+      // startProcess.on("close", (code) => {
+      //   if (code !== 0 && errorMessage) {
+      //     console.error("Failed to start service:", errorMessage.trim());
+      //     process.exit(1);
+      //   }
+      // });
+
+      startProcess.unref();
+
+      if (await waitForService()) {
         // Join all code arguments into a single string to preserve spaces within quotes
         const codeArgs = process.argv.slice(3);
         executeCodeCommand(codeArgs);
+      } else {
+        console.error(
+          "Service startup timeout, please manually run `ccr start` to start the service"
+        );
+        process.exit(1);
       }
       break;
+    }
     case "ui":
       // Check if service is running
       if (!isRunning) {
